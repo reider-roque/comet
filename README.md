@@ -1,5 +1,6 @@
 Descrtiption
-=====
+------------
+
 Comet is for COzy MEnu Tool.
 
 It's a simple customizable program launcher sitting in tray menu.
