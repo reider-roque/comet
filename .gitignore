@@ -1,6 +1,11 @@
 # Download this file using PowerShell v3 under Windows with the following comand
 # Invoke-WebRequest https://gist.githubusercontent.com/kmorcinek/2710267/raw/ -OutFile .gitignore
 
+# My additions
+TODO.txt
+*.DotSettings
+
+
 # User-specific files
 *.suo
 *.user
@@ -182,4 +187,3 @@ $RECYCLE.BIN/
 **/*.sln.ideTODO.txt
 
 
-TODO.txt
