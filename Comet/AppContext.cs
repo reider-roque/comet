@@ -44,8 +44,51 @@ namespace Comet
                 Visible = true
             };
 
+            HotKeyManager.HotKeyPressed += HotKeyManager_HotKeyPressed;
             BuildIconContextMenu();
             BuildPopUpContextMenu();
+        }
+
+        private static void ActivateShortcut(XElement element)
+        {
+            foreach (var el in element.Elements())
+            {
+                if (el.Name == "keyboardShortcut")
+                {
+                    var keyCombo = el.Attribute("keyCombo");
+                    if (keyCombo == null)
+                    {
+                        continue;
+                    }
+
+                    var keyModifiers = KeyModifiers.None;
+                    if (keyCombo.Value.Contains("^")) { keyModifiers |= KeyModifiers.Control; }
+                    if (keyCombo.Value.Contains("+")) { keyModifiers |= KeyModifiers.Shift; }
+                    if (keyCombo.Value.Contains("!")) { keyModifiers |= KeyModifiers.Alt; }
+                    if (keyCombo.Value.Contains("#")) { keyModifiers |= KeyModifiers.Windows; }
+
+                    // Last char
+                    var chr = keyCombo.Value[keyCombo.Value.Length - 1];
+                    var key = (Keys) char.ToUpper(chr);
+
+                    // Allow only chars in A-Za-z0-9 range
+                    if (!((key > Keys.A && key < Keys.Z) || (key > Keys.D0 && key < Keys.D9)))
+                    {
+                        _notifyIcon.ShowBalloonTip(
+                            10000,
+                            "Error",
+                            String.Format("Failed to create the \"{0}\" shortcut. The last key in the shortcut " +
+                                          "sequence can only be one from the A-Za-z0-9 range.", keyCombo.Value),
+                            ToolTipIcon.Error
+                            );
+                    }
+                    HotKeyManager.UnRegisterHotKey(_hotkeyId);
+                    _hotkeyId = HotKeyManager.RegisterHotKey(key, keyModifiers);
+
+                    break;
+                }
+                // Besides keyBoardShortcut in the root menu tag all other elements are menuItem
+            }
         }
 
         private static List<MenuItem> GetMenuItems(XElement element)
@@ -53,13 +96,13 @@ namespace Comet
             var menuItems = new List<MenuItem>();
             foreach (var el in element.Elements())
             {
-                /*if (el.Name == "keyboardShortcut")
+                // Only process menuItem tags
+                if (el.Name != "menuItem")
                 {
-
                     continue;
                 }
                 // Besides keyBoardShortcut in the root menu tag all other elements are menuItem
-*/
+
                 var name    = el.Attribute("name");
                 var program = el.Attribute("program");
                 var args    = el.Attribute("args");
@@ -150,18 +193,13 @@ namespace Comet
             niContextMenu.Items.AddRange(new ToolStripItem[] { helpMenu, exitMenu });
 
             _notifyIcon.ContextMenuStrip = niContextMenu;
-
-            HotKeyManager.RegisterHotKey(Keys.B, KeyModifiers.Alt | KeyModifiers.Control);
-            HotKeyManager.HotKeyPressed += HotKeyManager_HotKeyPressed;
         }
 
         private static void BuildPopUpContextMenu()
         {
-            // Unregister Hot key if it is registered and destroy the _contextMenu
+            // Destroy the _contextMenu
             if (_contextMenu != null)
             {
-                HotKeyManager.UnRegisterHotKey(_hotkeyId);
-                HotKeyManager.HotKeyPressed -= HotKeyManager_HotKeyPressed;
                 _contextMenu.Dispose();
             }
 
@@ -169,6 +207,7 @@ namespace Comet
 
             // Get MenuItems from menu configuration file
             var menuRoot = XDocument.Load(_menuFileInfo.FullName).Element("menu");
+            ActivateShortcut(menuRoot);
             var menuItems = GetMenuItems(menuRoot);
 
             // Have to handle the case when menuItems.count is 0
@@ -192,9 +231,6 @@ namespace Comet
                     _contextMenu.Items.Add(CreateToolStripMenuItem(menuItem));
                 }    
             }
-
-            _hotkeyId = HotKeyManager.RegisterHotKey(Keys.B, KeyModifiers.Alt | KeyModifiers.Control);
-            HotKeyManager.HotKeyPressed += HotKeyManager_HotKeyPressed;
         }
 
         static void HotKeyManager_HotKeyPressed(object sender, HotKeyEventArgs e)
@@ -237,7 +273,7 @@ namespace Comet
                     }
                     catch
                     {
-                        var tipText = String.Format("Command \"{0}\" wasn't executed correctly.", menuItem.Name);
+                        var tipText = String.Format("Error executing \"{0}\".", menuItem.Name);
                         _notifyIcon.ShowBalloonTip(5000, "Error", tipText, ToolTipIcon.Error);
                         return;
                     }
@@ -253,10 +289,10 @@ namespace Comet
                         if (output.Equals(String.Empty)) output = "Completed without output.";
                         _notifyIcon.ShowBalloonTip(5000, "Completed", output, ToolTipIcon.Info);
                     }
-                    else
+/*                    else
                     {
                         _notifyIcon.ShowBalloonTip(5000, "Completed", "Application started.", ToolTipIcon.Info);
-                    }
+                    }*/
                 };
             }
 
@@ -272,8 +308,10 @@ namespace Comet
         {
             if (disposing && (_components != null))
             {
+                HotKeyManager.UnRegisterHotKey(_hotkeyId);
                 _components.Dispose();
             }
+
             base.Dispose(disposing);
         }
     }
