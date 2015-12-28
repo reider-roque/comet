@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using System.Xml.Linq;
 
@@ -14,12 +15,17 @@ namespace Comet
 {
     public class AppContext : ApplicationContext
     {
+        [DllImport("user32.dll", CharSet = CharSet.Auto, ExactSpelling = true)]
+        public static extern bool SetForegroundWindow(HandleRef hWnd);
+
         private const string MenuFileName = "menu.config";
         
         private static readonly IContainer _components = new Container();
         private static NotifyIcon _notifyIcon;
         private static FileInfo _menuFileInfo;
         private static Point _mousePosition;
+        private static ContextMenuStrip _contextMenu;
+        private static int _hotkeyId;
         
         public AppContext()
         {
@@ -38,7 +44,8 @@ namespace Comet
                 Visible = true
             };
 
-            BuildContextMenu();
+            BuildIconContextMenu();
+            BuildPopUpContextMenu();
         }
 
         private static List<MenuItem> GetMenuItems(XElement element)
@@ -46,6 +53,13 @@ namespace Comet
             var menuItems = new List<MenuItem>();
             foreach (var el in element.Elements())
             {
+                /*if (el.Name == "keyboardShortcut")
+                {
+
+                    continue;
+                }
+                // Besides keyBoardShortcut in the root menu tag all other elements are menuItem
+*/
                 var name    = el.Attribute("name");
                 var program = el.Attribute("program");
                 var args    = el.Attribute("args");
@@ -80,7 +94,7 @@ namespace Comet
             return menuItems;
         }
 
-        private static void BuildContextMenu()
+        private static void BuildIconContextMenu()
         {
             // Get MenuItems from menu configuration file
             var menuRoot = XDocument.Load(_menuFileInfo.FullName).Element("menu");
@@ -89,20 +103,22 @@ namespace Comet
             // menuItem can never be null, no need to handle
             // If menuItem == 0 that's also fine, the menu will consist of Help and Exit items only
 
-            var contextMenu = new ContextMenuStrip(_components);
+            var niContextMenu = new ContextMenuStrip(_components);
+
             // Capture mouse position for 'Reload Menu' functionality
-            contextMenu.MouseClick += (sender, e) => _mousePosition = Control.MousePosition;
+            niContextMenu.MouseClick += (sender, e) => _mousePosition = Control.MousePosition;
 
             foreach (var menuItem in menuItems)
             {
-                contextMenu.Items.Add(CreateToolStripMenuItem(menuItem));
+                niContextMenu.Items.Add(CreateToolStripMenuItem(menuItem));
             }
 
             /* Reload [Help submenu] */
             var reloadMenu = new ToolStripMenuItem {Text = "Reload Menu"};
             reloadMenu.Click += (sender, e) =>
                 {
-                    BuildContextMenu();
+                    BuildIconContextMenu();
+                    BuildPopUpContextMenu();
                     _notifyIcon.ContextMenuStrip.Show(_mousePosition);
                 };
 
@@ -112,7 +128,13 @@ namespace Comet
 
             /* About [Help submenu] */
             var aboutMenu = new ToolStripMenuItem { Text = "About" };
-            aboutMenu.Click += (sender, e) => MessageBox.Show("Cosy Menu Tool (CoMeT)\n\nAuthor: Oleg Mitrofanov © 2013", "About Comet", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            aboutMenu.Click += (sender, e) => MessageBox.Show(
+                String.Format("Cosy Menu Tool (CoMeT)\n\nOleg Mitrofanov (www.wryway.com)\n" +
+                              "All rights reserved © 2013 - {0}", DateTime.Now.Year), 
+                "About Comet", 
+                MessageBoxButtons.OK, 
+                MessageBoxIcon.Information
+            );
 
             /* Help menu */
             var helpMenu = new ToolStripMenuItem { Text = "Help" };
@@ -125,9 +147,61 @@ namespace Comet
                 Environment.Exit(0);
             };
             
-            contextMenu.Items.AddRange(new ToolStripItem[] { helpMenu, exitMenu });
+            niContextMenu.Items.AddRange(new ToolStripItem[] { helpMenu, exitMenu });
 
-            _notifyIcon.ContextMenuStrip = contextMenu;
+            _notifyIcon.ContextMenuStrip = niContextMenu;
+
+            HotKeyManager.RegisterHotKey(Keys.B, KeyModifiers.Alt | KeyModifiers.Control);
+            HotKeyManager.HotKeyPressed += HotKeyManager_HotKeyPressed;
+        }
+
+        private static void BuildPopUpContextMenu()
+        {
+            // Unregister Hot key if it is registered and destroy the _contextMenu
+            if (_contextMenu != null)
+            {
+                HotKeyManager.UnRegisterHotKey(_hotkeyId);
+                HotKeyManager.HotKeyPressed -= HotKeyManager_HotKeyPressed;
+                _contextMenu.Dispose();
+            }
+
+             _contextMenu = new ContextMenuStrip(_components);
+
+            // Get MenuItems from menu configuration file
+            var menuRoot = XDocument.Load(_menuFileInfo.FullName).Element("menu");
+            var menuItems = GetMenuItems(menuRoot);
+
+            // Have to handle the case when menuItems.count is 0
+            // Add an About entry in case there are 0 actual menu entries
+            if (menuItems.Count == 0)
+            {
+                var aboutMenu = new ToolStripMenuItem { Text = "About" };
+                aboutMenu.Click += (sender, e) => MessageBox.Show(
+                    String.Format("Cosy Menu Tool (CoMeT)\n\nOleg Mitrofanov (www.wryway.com)\n" +
+                                  "All rights reserved © 2013 - {0}", DateTime.Now.Year),
+                    "About Comet",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information
+                );
+                _contextMenu.Items.Add(aboutMenu);
+            }
+            else
+            {
+                foreach (var menuItem in menuItems)
+                {
+                    _contextMenu.Items.Add(CreateToolStripMenuItem(menuItem));
+                }    
+            }
+
+            _hotkeyId = HotKeyManager.RegisterHotKey(Keys.B, KeyModifiers.Alt | KeyModifiers.Control);
+            HotKeyManager.HotKeyPressed += HotKeyManager_HotKeyPressed;
+        }
+
+        static void HotKeyManager_HotKeyPressed(object sender, HotKeyEventArgs e)
+        {
+            // SetForegroundWindow is needed for not showing the ugly app icon it Windows taskbar
+            SetForegroundWindow(new HandleRef(_notifyIcon.ContextMenuStrip, _notifyIcon.ContextMenuStrip.Handle));
+            _contextMenu.Show(Cursor.Position);
         }
 
         private static ToolStripMenuItem CreateToolStripMenuItem(MenuItem menuItem)

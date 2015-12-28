@@ -1,7 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace Comet
@@ -14,9 +11,14 @@ namespace Comet
         [STAThread]
         static void Main()
         {
+            var hotKeyMessageLoop = new HotKeyMessageLoop();
+            Application.AddMessageFilter(hotKeyMessageLoop);
+
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.Run(new AppContext());
+
+            Application.RemoveMessageFilter(hotKeyMessageLoop);
         }
     }
 }
