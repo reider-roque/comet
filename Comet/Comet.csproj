@@ -114,6 +114,9 @@
   <ItemGroup>
     <Compile Include="AppContext.cs" />
     <Compile Include="HotKeyManager.cs" />
+    <Compile Include="IconExtractor\IconExtractor.cs" />
+    <Compile Include="IconExtractor\IconUtil.cs" />
+    <Compile Include="IconExtractor\NativeMethods.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <EmbeddedResource Include="Properties\Resources.resx">

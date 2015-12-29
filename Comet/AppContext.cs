@@ -10,6 +10,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using System.Xml.Linq;
+using TsudaKageyu;
 
 namespace Comet
 {
@@ -106,6 +107,7 @@ namespace Comet
                 var name    = el.Attribute("name");
                 var program = el.Attribute("program");
                 var args    = el.Attribute("args");
+                var icon    = el.Attribute("icon");
                 var hidden  = el.Attribute("hidden");
 
                 if (name == null) continue;
@@ -113,6 +115,9 @@ namespace Comet
                 var nameVal    = name.Value;
                 var programVal = (program == null) ? string.Empty : program.Value;
                 var argsVal    = (args    == null) ? string.Empty : args.Value;
+                var iconVal    = (icon    == null) ? string.Empty : icon.Value;
+                // Handle special keyword program in icon attribute
+                if (iconVal == "program") { iconVal = programVal; }
                 var hiddenVal  = false; //Default
                 if (hidden != null)
                 {
@@ -129,6 +134,7 @@ namespace Comet
                         Program = programVal,
                         Arguments = argsVal,
                         Hidden = hiddenVal,
+                        Icon = iconVal,
                         SubMenus = GetMenuItems(el)
                     };
 
@@ -289,12 +295,21 @@ namespace Comet
                         if (output.Equals(String.Empty)) output = "Completed without output.";
                         _notifyIcon.ShowBalloonTip(5000, "Completed", output, ToolTipIcon.Info);
                     }
-/*                    else
+/*
+                    else
                     {
                         _notifyIcon.ShowBalloonTip(5000, "Completed", "Application started.", ToolTipIcon.Info);
-                    }*/
+                    }
+*/
                 };
             }
+
+            var icon = GetIcon(menuItem.Icon);
+            if (icon != null)
+            {
+                toolStripMenuItem.Image = icon;
+            }
+
 
             foreach (var item in menuItem.SubMenus)
             {
@@ -302,6 +317,42 @@ namespace Comet
             }
 
             return toolStripMenuItem;
+        }
+
+        private static Image GetIcon(String iconPath)
+        {
+            if (String.IsNullOrEmpty(iconPath) || !File.Exists(iconPath))
+            {
+                return null;
+            }
+
+            var ext = Path.GetExtension(iconPath);
+            if (ext == ".exe") // Also works with .dll
+            {
+                /* IconExtractor does a better job (produces better resolution) extracting
+                 * icons from .exe/.dll files then Icon.ExtractAssociatedIcon()
+                 * Example was taken from here: 
+                 * http://www.codeproject.com/Articles/26824/Extract-icons-from-EXE-or-DLL-files
+                 */
+                var iconExtractor = new IconExtractor(iconPath);
+                var icon = iconExtractor.GetIcon(0);
+                var splitIcons = IconUtil.Split(icon);
+                return IconUtil.ToBitmap(splitIcons[0]);
+            }
+
+            if (ext == ".ico")
+            {
+                var icon = Icon.ExtractAssociatedIcon(iconPath);
+                return icon == null ? null : icon.ToBitmap();
+            }
+
+            if (ext == ".png" || ext == ".bmp" || ext == ".gif" ||
+                ext == ".jpg" || ext == ".jpeg" || ext == ".tiff")
+            {
+                return Image.FromFile(iconPath);
+            }
+
+            return null;
         }
 
         protected override void Dispose(bool disposing)
@@ -322,7 +373,8 @@ namespace Comet
         public List<MenuItem> SubMenus  { get; set; }
         public String         Name      { get; set; }
         public String         Program   { get; set; }
-        public Boolean        Hidden   { get; set; }
+        public String         Icon      { get; set;}
+        public Boolean        Hidden    { get; set; }
 
         public MenuItem()
         {
@@ -330,6 +382,7 @@ namespace Comet
             SubMenus  = new List<MenuItem>();
             Name      = string.Empty;
             Program   = string.Empty;
+            Icon      = string.Empty;
             Hidden   = false;
         }
     }
