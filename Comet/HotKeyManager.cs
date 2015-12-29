@@ -62,6 +62,7 @@ namespace Comet
     public class HotKeyMessageLoop : IMessageFilter
     {
         private const int WM_HOTKEY = 0x312;
+        //  private const int WM_SETTINGCHANGE = 0x1A;
         public bool PreFilterMessage(ref Message m)
         {
             if (m.Msg == WM_HOTKEY)

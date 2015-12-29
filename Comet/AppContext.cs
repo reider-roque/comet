@@ -1,6 +1,7 @@
 ﻿#define NEWOUTPUT
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -271,8 +272,13 @@ namespace Comet
                         startInfo.RedirectStandardOutput = true;
                     }
                     
-                    var process = new Process {StartInfo = startInfo};
+                    /* A better place for updating environment variables would be by
+                     * reacting on WM_SETTINGCHANGE message, but because this application
+                     * does not have a top window (only top window receive that message)
+                     * it is updated here. */
+                    UpdateEnvironmentVariables();
 
+                    var process = new Process {StartInfo = startInfo};
                     try
                     {
                         process.Start();
@@ -353,6 +359,37 @@ namespace Comet
             }
 
             return null;
+        }
+
+        private static void UpdateEnvironmentVariables()
+        {
+            /* A regular user environment variable overrides completely a system one with
+             * the same name if both exist, but only for the specific user it is specified 
+             * for. However, the user path variables is treated differently. It is appended 
+             * to the system path variable when evaluating, rather than completely 
+             * replacing it. Source:
+             * http://stackoverflow.com/questions/5126512/how-environment-variables-are-evaluated
+             */ 
+
+            var sysEnvVars = Environment.GetEnvironmentVariables(EnvironmentVariableTarget.Machine);
+            foreach (DictionaryEntry envVar in sysEnvVars)
+            {
+                Environment.SetEnvironmentVariable((String)envVar.Key, (String)envVar.Value);
+            }
+
+            var usrEnvVars = Environment.GetEnvironmentVariables(EnvironmentVariableTarget.User);
+            foreach (DictionaryEntry envVar in usrEnvVars)
+            {
+                // The PATH variable is treated differently
+                if ((String)envVar.Key == "PATH")
+                {
+                    String sysPath = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Machine);
+                    String combinedPath = sysPath + ";" + (String) envVar.Value; // Combine system and user paths
+                    Environment.SetEnvironmentVariable("PATH", combinedPath);
+                    continue;
+                }
+                Environment.SetEnvironmentVariable((String)envVar.Key, (String)envVar.Value);
+            }
         }
 
         protected override void Dispose(bool disposing)
