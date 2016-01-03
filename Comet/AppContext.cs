@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using System.Xml.Linq;
@@ -31,7 +32,10 @@ namespace Comet
         
         public AppContext()
         {
-            _menuFileInfo = new FileInfo(MenuFileName);
+            String exeFilePath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            exeFilePath = exeFilePath ?? String.Empty;
+            String fullMenuFilePath = Path.Combine(exeFilePath, MenuFileName);
+            _menuFileInfo = new FileInfo(fullMenuFilePath);
             if (!_menuFileInfo.Exists)
             {
                 MessageBox.Show("Menu configuration file wasn't found.\nFile: " + _menuFileInfo.FullName, "Error");
@@ -240,7 +244,7 @@ namespace Comet
             }
         }
 
-        static void HotKeyManager_HotKeyPressed(object sender, HotKeyEventArgs e)
+        public static void HotKeyManager_HotKeyPressed(object sender, HotKeyEventArgs e)
         {
             // SetForegroundWindow is needed for not showing the ugly app icon it Windows taskbar
             SetForegroundWindow(new HandleRef(_notifyIcon.ContextMenuStrip, _notifyIcon.ContextMenuStrip.Handle));
@@ -256,9 +260,17 @@ namespace Comet
             {
                 toolStripMenuItem.Click += (sender, e) =>
                 {
+                    var standardFileName = Utils.GetStandardExecutablePath(menuItem.Program);
+                    if (standardFileName == null)
+                    {
+                        var tipText = String.Format("File not found: \"{0}\".", menuItem.Program);
+                        _notifyIcon.ShowBalloonTip(10000, "Error", tipText, ToolTipIcon.Error);
+                        return;
+                    }
+
                     var startInfo = new ProcessStartInfo
                     {
-                        FileName = menuItem.Program,
+                        FileName = standardFileName,
                         Arguments = menuItem.Arguments,
                         WindowStyle = ProcessWindowStyle.Normal
                     };
@@ -276,20 +288,23 @@ namespace Comet
                      * reacting on WM_SETTINGCHANGE message, but because this application
                      * does not have a top window (only top window receive that message)
                      * it is updated here. */
-                    UpdateEnvironmentVariables();
+                    Utils.UpdateEnvironmentVariables();
 
                     var process = new Process {StartInfo = startInfo};
                     try
                     {
                         process.Start();
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        var tipText = String.Format("Error executing \"{0}\".", menuItem.Name);
-                        _notifyIcon.ShowBalloonTip(5000, "Error", tipText, ToolTipIcon.Error);
+                        Console.WriteLine(ex.Message);
+                        var tipText = String.Format("Starting error: \"{0}\".", menuItem.Program);
+                        _notifyIcon.ShowBalloonTip(10000, "Error", tipText, ToolTipIcon.Error);
                         return;
                     }
 
+                    /* If process was started as hidden try to collect it's output and display the
+                     * last line of that output */
                     if (menuItem.Hidden)
                     {
                         var outputLines = new List<string>();
@@ -299,7 +314,7 @@ namespace Comet
                         String output = String.Empty;
                         if (outputLines.Any()) output = outputLines.Last();
                         if (output.Equals(String.Empty)) output = "Completed without output.";
-                        _notifyIcon.ShowBalloonTip(5000, "Completed", output, ToolTipIcon.Info);
+                        _notifyIcon.ShowBalloonTip(10000, "Completed", output, ToolTipIcon.Info);
                     }
 /*
                     else
@@ -310,7 +325,7 @@ namespace Comet
                 };
             }
 
-            var icon = GetIcon(menuItem.Icon);
+            var icon = Utils.GetIcon(menuItem.Icon);
             if (icon != null)
             {
                 toolStripMenuItem.Image = icon;
@@ -323,73 +338,6 @@ namespace Comet
             }
 
             return toolStripMenuItem;
-        }
-
-        private static Image GetIcon(String iconPath)
-        {
-            if (String.IsNullOrEmpty(iconPath) || !File.Exists(iconPath))
-            {
-                return null;
-            }
-
-            var ext = Path.GetExtension(iconPath);
-            if (ext == ".exe") // Also works with .dll
-            {
-                /* IconExtractor does a better job (produces better resolution) extracting
-                 * icons from .exe/.dll files then Icon.ExtractAssociatedIcon()
-                 * Example was taken from here: 
-                 * http://www.codeproject.com/Articles/26824/Extract-icons-from-EXE-or-DLL-files
-                 */
-                var iconExtractor = new IconExtractor(iconPath);
-                var icon = iconExtractor.GetIcon(0);
-                var splitIcons = IconUtil.Split(icon);
-                return IconUtil.ToBitmap(splitIcons[0]);
-            }
-
-            if (ext == ".ico")
-            {
-                var icon = Icon.ExtractAssociatedIcon(iconPath);
-                return icon == null ? null : icon.ToBitmap();
-            }
-
-            if (ext == ".png" || ext == ".bmp" || ext == ".gif" ||
-                ext == ".jpg" || ext == ".jpeg" || ext == ".tiff")
-            {
-                return Image.FromFile(iconPath);
-            }
-
-            return null;
-        }
-
-        private static void UpdateEnvironmentVariables()
-        {
-            /* A regular user environment variable overrides completely a system one with
-             * the same name if both exist, but only for the specific user it is specified 
-             * for. However, the user path variables is treated differently. It is appended 
-             * to the system path variable when evaluating, rather than completely 
-             * replacing it. Source:
-             * http://stackoverflow.com/questions/5126512/how-environment-variables-are-evaluated
-             */ 
-
-            var sysEnvVars = Environment.GetEnvironmentVariables(EnvironmentVariableTarget.Machine);
-            foreach (DictionaryEntry envVar in sysEnvVars)
-            {
-                Environment.SetEnvironmentVariable((String)envVar.Key, (String)envVar.Value);
-            }
-
-            var usrEnvVars = Environment.GetEnvironmentVariables(EnvironmentVariableTarget.User);
-            foreach (DictionaryEntry envVar in usrEnvVars)
-            {
-                // The PATH variable is treated differently
-                if ((String)envVar.Key == "PATH")
-                {
-                    String sysPath = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Machine);
-                    String combinedPath = sysPath + ";" + (String) envVar.Value; // Combine system and user paths
-                    Environment.SetEnvironmentVariable("PATH", combinedPath);
-                    continue;
-                }
-                Environment.SetEnvironmentVariable((String)envVar.Key, (String)envVar.Value);
-            }
         }
 
         protected override void Dispose(bool disposing)
